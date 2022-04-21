@@ -664,6 +664,17 @@ void MediaPlayListProxyModel::determineAndNotifyPreviousAndNextTracks()
     }
 }
 
+int MediaPlayListProxyModel::indexForTrackUrl(const QUrl &url)
+{
+    for (int i = 0; i < rowCount(); ++i) {
+        const QUrl thisTrackUrl = data(index(i,0), MediaPlayList::ResourceRole).toUrl();
+        if (thisTrackUrl == url) {
+            return i;
+        }
+    }
+    return -1;
+}
+
 void MediaPlayListProxyModel::clearPlayList()
 {
     if (rowCount() == 0) {
@@ -836,6 +847,18 @@ void MediaPlayListProxyModel::enqueueDirectory(const QUrl &fileName, ElisaUtils:
         }
     }
     if (newFiles.size() != 0) enqueue(newFiles, ElisaUtils::AppendPlayList, triggerPlay);
+}
+
+void MediaPlayListProxyModel::replacePlaylistWithContentAndPlayTrack(const DataTypes::EntryDataList &newEntries, const QUrl &url)
+{
+    enqueue(newEntries, ElisaUtils::ReplacePlayList, ElisaUtils::DoNotTriggerPlay);
+     // FIXME REPLACE WITH REAL URL
+    const int chosenTrackeIndex = indexForTrackUrl(url);
+    if (chosenTrackeIndex != -1) {
+        switchTo(chosenTrackeIndex);
+    } else {
+        qCDebug(orgKdeElisaPlayList()) << "Tried to switch to track with url" << url << "but it was not found among the tracks in the playlist!";
+    }
 }
 
 #include "moc_mediaplaylistproxymodel.cpp"

@@ -119,6 +119,11 @@ AbstractDataView {
         onCallOpenMetaDataView: {
             openMetaDataView(databaseId, url, entryType)
         }
+
+        onReplaceWithParentViewContentAndPlayThisTrack: {
+            console.warn("Triggered onReplaceWithParentViewContentAndPlayThisTrack with url " + url);
+            ElisaApplication.mediaPlayListProxyModel.replacePlaylistWithContentAndPlayTrack(model.fullData, url)
+        }
     }
 
 

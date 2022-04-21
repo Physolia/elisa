@@ -174,6 +174,8 @@ public Q_SLOTS:
                           ElisaUtils::PlayListEnqueueMode enqueueMode,
                           ElisaUtils::PlayListEnqueueTriggerPlay triggerPlay, int depth);
 
+    void replacePlaylistWithContentAndPlayTrack(const DataTypes::EntryDataList &newEntries, const QUrl &url);
+
 Q_SIGNALS:
 
     void previousTrackChanged(const QPersistentModelIndex &previousTrack);
@@ -261,6 +263,8 @@ private:
     void determineAndNotifyPreviousAndNextTracks();
 
     std::unique_ptr<MediaPlayListProxyModelPrivate> d;
+
+    int indexForTrackUrl(const QUrl &url);
 };
 
 #endif // MEDIAPLAYLISTPROXYMODEL_H
