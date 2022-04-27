@@ -173,7 +173,9 @@ QString LyricsModel::LyricsModelPrivate::parseTags(QString::const_iterator &begi
                     + QStringLiteral("\n");
             begin = tagContentEnd;
         } else {
-            return tags;
+            // No tag, we step back one to compensate the '[' we step over
+            begin--;
+            break;
         }
     }
     return tags;
