@@ -324,8 +324,8 @@ Kirigami.Page {
                         anchors.centerIn: parent
                         width: parent.width
 
-                        active: !lyricsView.visible
-                        visible: active && status === Loader.Ready && lyricsView.count === 0
+                        active: lyricsView.count === 0
+                        visible: active && status === Loader.Ready
 
                         sourceComponent: Kirigami.PlaceholderMessage {
                             text: i18n("No lyrics found")
