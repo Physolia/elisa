@@ -24,6 +24,8 @@ private:
     qint64 parseOneTimeStamp(QString::const_iterator &begin, QString::const_iterator end);
     QString parseOneLine(QString::const_iterator &begin, QString::const_iterator end);
     QString parseTags(QString::const_iterator &begin, QString::const_iterator end);
+
+    qint64 offset = 0;
 };
 /*###########parseOneTimeStamp###########
  * Function to parse timestamp of one LRC line
@@ -83,18 +85,21 @@ qint64 LyricsModel::LyricsModelPrivate::parseOneTimeStamp(
                 switch (states) {
                     case LeftBracket:
                         states = Minutes;
+                        [[fallthrough]];
                     case Minutes:
                         minute *= 10;
                         minute += begin->toLatin1() - '0';
                         break;
                     case Colon:
                         states = Seconds;
+                        [[fallthrough]];
                     case Seconds:
                         second *= 10;
                         second += begin->toLatin1() - '0';
                         break;
                     case Period:
                         states = Hundredths;
+                        [[fallthrough]];
                     case Hundredths:
                         // we only parse to hundredth second
                         if (hundred >= 100) {
@@ -146,14 +151,15 @@ QString LyricsModel::LyricsModelPrivate::parseTags(QString::const_iterator &begi
         }
         return begin;
     };
-    static std::unordered_map<QString, QString> map = {{QStringLiteral("ar"), i18n("Artist: ")},
-                                                       {QStringLiteral("al"), i18n("Album: ")},
-                                                       {QStringLiteral("ti"), i18n("Title: ")},
-                                                       {QStringLiteral("au"), i18n("Creator: ")},
-                                                       {QStringLiteral("length"), i18n("Length: ")},
-                                                       {QStringLiteral("by"), i18n("Created by: ")},
-                                                       {QStringLiteral("re"), i18n("Editor: ")},
-                                                       {QStringLiteral("ve"), i18n("Version: ")}};
+    static std::unordered_map<QString, QString> map = {
+        {QStringLiteral("ar"), i18n("Artist")},
+        {QStringLiteral("al"), i18n("Album")},
+        {QStringLiteral("ti"), i18n("Title")},
+        {QStringLiteral("au"), i18n("Creator")},
+        {QStringLiteral("length"), i18n("Length")},
+        {QStringLiteral("by"), i18nc("as in `Created by: Joe`", "Created by")},
+        {QStringLiteral("re"), i18n("Editor")},
+        {QStringLiteral("ve"), i18n("Version")}};
     QString tags;
 
     while (begin != end) {
@@ -166,16 +172,33 @@ QString LyricsModel::LyricsModelPrivate::parseTags(QString::const_iterator &begi
 
         auto tagIdEnd = skipTillChar(begin, end, ':');
         auto tagId = QString(begin, std::distance(begin, tagIdEnd));
-        if(tagIdEnd != end && map.count(tagId)) {
-            tagIdEnd++;
-            auto tagContentEnd = skipTillChar(tagIdEnd, end, ']');
-            tags += map[tagId] + QString(tagIdEnd, std::distance(tagIdEnd, tagContentEnd))
-                    + QStringLiteral("\n");
+        if (tagIdEnd != end &&
+            (map.count(tagId) || tagId == QStringLiteral("offset"))) {
+          tagIdEnd++;
+
+          auto tagContentEnd = skipTillChar(tagIdEnd, end, ']');
+          bool ok = true;
+          if (map.count(tagId)) {
+            tags += i18nc(
+                "this is a key => value map", "%1: %2\n", map[tagId],
+                QString(tagIdEnd, std::distance(tagIdEnd, tagContentEnd)));
+          } else {
+            // offset tag
+            offset = QString(tagIdEnd, std::distance(tagIdEnd, tagContentEnd))
+                         .toLongLong(&ok);
+          }
+          if (ok) {
             begin = tagContentEnd;
-        } else {
-            // No tag, we step back one to compensate the '[' we step over
+          } else {
+            // Invalid offset tag, we step back one to compensate the '[' we
+            // step over
             begin--;
             break;
+          }
+        } else {
+          // No tag, we step back one to compensate the '[' we step over
+          begin--;
+          break;
         }
     }
     return tags;
@@ -184,6 +207,7 @@ bool LyricsModel::LyricsModelPrivate::parse(const QString &lyric)
 {
     timeToStringIndex.clear();
     lyrics.clear();
+    offset = 0;
 
     if (lyric.isEmpty())
         return false;
@@ -196,8 +220,10 @@ bool LyricsModel::LyricsModelPrivate::parse(const QString &lyric)
     while (begin != lyric.end()) {
         auto timeStamp = parseOneTimeStamp(begin, end);
         while (timeStamp >= 0) {
-            timeStamps.push_back(timeStamp);
-            timeStamp = parseOneTimeStamp(begin, end);
+          // one line can have multiple timestamps
+          // [00:12.00][00:15.30]Some more lyrics ...
+          timeStamps.push_back(timeStamp);
+          timeStamp = parseOneTimeStamp(begin, end);
         }
         auto string = parseOneLine(begin, end);
         if (!string.isEmpty() && !timeStamps.empty()) {
@@ -216,7 +242,14 @@ bool LyricsModel::LyricsModelPrivate::parse(const QString &lyric)
                  const std::pair<qint64, int> &rhs) {
                   return lhs.first < rhs.first;
               });
-
+    if (offset) {
+      std::transform(timeToStringIndex.begin(), timeToStringIndex.end(),
+                     timeToStringIndex.begin(),
+                     [this](std::pair<qint64, int> &element) {
+                       element.first += offset;
+                       return element;
+                     });
+    }
     // insert tags to first lyric front
     if (!timeToStringIndex.empty() && !tag.isEmpty()) {
         lyrics.at(timeToStringIndex.begin()->second).push_front(tag);
