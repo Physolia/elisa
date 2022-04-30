@@ -13,12 +13,9 @@ class LyricsModel::LyricsModelPrivate
 public:
     bool parse(const QString &lyric);
     int highlightedIndex{-1};
-    int timeIndex{0};
-    qint64 lastPosition{1};
+    bool isLRC {false};
 
-    // pairs of lyric timestamp and corresponding content index in lyrics vector
-    std::vector<std::pair<qint64, int>> timeToStringIndex;
-    std::vector<QString> lyrics;
+    std::vector<std::pair<QString, qint64>> lyrics;
 
 private:
     qint64 parseOneTimeStamp(QString::const_iterator &begin, QString::const_iterator end);
@@ -124,6 +121,7 @@ qint64 LyricsModel::LyricsModelPrivate::parseOneTimeStamp(
     // end of lyric and no correct value found
     return -1;
 }
+
 QString
 LyricsModel::LyricsModelPrivate::parseOneLine(QString::const_iterator &begin,
                                               QString::const_iterator end)
@@ -143,6 +141,12 @@ LyricsModel::LyricsModelPrivate::parseOneLine(QString::const_iterator &begin,
     } else
         return {};
 }
+
+/*
+ * [length:04:07.46]
+ * [re:www.megalobiz.com/lrc/maker]
+ * [ve:v1.2.3]
+ */
 QString LyricsModel::LyricsModelPrivate::parseTags(QString::const_iterator &begin, QString::const_iterator end)
 {
     static auto skipTillChar = [](QString::const_iterator begin, QString::const_iterator end, char endChar) {
@@ -165,10 +169,12 @@ QString LyricsModel::LyricsModelPrivate::parseTags(QString::const_iterator &begi
     while (begin != end) {
         // skip till tags
         begin = skipTillChar(begin, end, '[');
-        if (begin != end)
+        if (begin != end) {
             begin++;
-        else
+        }
+        else {
             break;
+        }
 
         auto tagIdEnd = skipTillChar(begin, end, ':');
         auto tagId = QString(begin, std::distance(begin, tagIdEnd));
@@ -187,6 +193,7 @@ QString LyricsModel::LyricsModelPrivate::parseTags(QString::const_iterator &begi
             offset = QString(tagIdEnd, std::distance(tagIdEnd, tagContentEnd))
                          .toLongLong(&ok);
           }
+
           if (ok) {
             begin = tagContentEnd;
           } else {
@@ -203,9 +210,9 @@ QString LyricsModel::LyricsModelPrivate::parseTags(QString::const_iterator &begi
     }
     return tags;
 }
+
 bool LyricsModel::LyricsModelPrivate::parse(const QString &lyric)
 {
-    timeToStringIndex.clear();
     lyrics.clear();
     offset = 0;
 
@@ -214,7 +221,6 @@ bool LyricsModel::LyricsModelPrivate::parse(const QString &lyric)
 
     QString::const_iterator begin = lyric.begin(), end = lyric.end();
     auto tag = parseTags(begin, end);
-    int index = 0;
     std::vector<qint64> timeStamps;
 
     while (begin != lyric.end()) {
@@ -228,34 +234,33 @@ bool LyricsModel::LyricsModelPrivate::parse(const QString &lyric)
         auto string = parseOneLine(begin, end);
         if (!string.isEmpty() && !timeStamps.empty()) {
             for (auto time : timeStamps) {
-                timeToStringIndex.push_back({time, index});
+                lyrics.push_back({string, time});
             }
-            index++;
-            lyrics.emplace_back(std::move(string));
         }
         timeStamps.clear();
     }
 
-    std::sort(timeToStringIndex.begin(),
-              timeToStringIndex.end(),
-              [](const std::pair<qint64, int> &lhs,
-                 const std::pair<qint64, int> &rhs) {
-                  return lhs.first < rhs.first;
+    std::sort(lyrics.begin(),
+              lyrics.end(),
+              [](const std::pair<QString, qint64> &lhs,
+                 const std::pair<QString, qint64> &rhs) {
+                  return lhs.second < rhs.second;
               });
     if (offset) {
-      std::transform(timeToStringIndex.begin(), timeToStringIndex.end(),
-                     timeToStringIndex.begin(),
-                     [this](std::pair<qint64, int> &element) {
-                       element.first += offset;
+      std::transform(lyrics.begin(), lyrics.end(),
+                     lyrics.begin(),
+                     [this](std::pair<QString, qint64> &element) {
+                       element.second = std::max(element.second + offset, 0ll);
                        return element;
                      });
     }
     // insert tags to first lyric front
-    if (!timeToStringIndex.empty() && !tag.isEmpty()) {
-        lyrics.at(timeToStringIndex.begin()->second).push_front(tag);
+    if (!lyrics.empty() && !tag.isEmpty()) {
+        lyrics.insert(lyrics.begin(), {tag, 0});
     }
-    return !timeToStringIndex.empty();
+    return !lyrics.empty();
 }
+
 LyricsModel::LyricsModel(QObject *parent)
     : QAbstractListModel(parent)
     , d(std::make_unique<LyricsModelPrivate>())
@@ -269,6 +274,7 @@ int LyricsModel::rowCount(const QModelIndex &parent) const
     Q_UNUSED(parent)
     return d->lyrics.size();
 }
+
 QVariant LyricsModel::data(const QModelIndex &index, int role) const
 {
     Q_UNUSED(role)
@@ -276,76 +282,72 @@ QVariant LyricsModel::data(const QModelIndex &index, int role) const
     if (index.row() < 0 || index.row() >= (int)d->lyrics.size())
         return {};
 
-    return d->lyrics.at(index.row());
+    switch (role) {
+    case LyricsRole::Lyric:
+        return d->lyrics.at(index.row()).first;
+    case LyricsRole::TimeStamp:
+        return d->lyrics.at(index.row()).second;
+    }
+
+    Q_UNREACHABLE();
 }
+
 void LyricsModel::setLyric(const QString &lyric)
 {
+    bool isLRC = true;
+
     beginResetModel();
-    d->lastPosition = -1;
-    d->timeIndex = 0;
     auto ret = d->parse(lyric);
 
     // has non-LRC formatted lyric
     if (!ret && !lyric.isEmpty()) {
-        d->timeToStringIndex = {{-1, 0}};
-        d->lyrics = {lyric};
+        d->lyrics = {{lyric, 0ll}};
         d->highlightedIndex = -1;
+        isLRC = false;
     }
     endResetModel();
+
     Q_EMIT highlightedIndexChanged();
     Q_EMIT lyricChanged();
+    if (isLRC != d->isLRC) {
+        d->isLRC = isLRC;
+        Q_EMIT isLRCChanged();
+    }
 }
+
 void LyricsModel::setPosition(qint64 position)
 {
-    if (d->timeToStringIndex.empty())
-        return;
-
-    // non-LRC formatted lyric, no highlight
-    if (d->timeToStringIndex.front().first < 0) {
-        if (d->highlightedIndex != -1) {
-            d->highlightedIndex = -1;
-            Q_EMIT highlightedIndexChanged();
-        }
-        return;
-    }
-
-    // if progressed less than 1s, do a linear search from last index
-    if (d->lastPosition >= 0 && position >= d->lastPosition &&
-        position - d->lastPosition < 1000) {
-        d->lastPosition = position;
-        auto index = d->timeIndex;
-        while (index < (int)d->timeToStringIndex.size() - 1) {
-            if (d->timeToStringIndex.at(index + 1).first > position) {
-                d->timeIndex = index;
-                d->highlightedIndex = d->timeToStringIndex.at(index).second;
-                Q_EMIT highlightedIndexChanged();
-                return;
-            } else
-                index++;
-        }
-        // last lyric
-        d->timeIndex = d->timeToStringIndex.size() - 1;
-        d->highlightedIndex = d->timeToStringIndex.back().second;
-        Q_EMIT highlightedIndexChanged();
+    if (!isLRC()) {
         return;
     }
 
     // do binary search
-    d->lastPosition = position;
     auto result =
-        std::lower_bound(d->timeToStringIndex.begin(),
-                         d->timeToStringIndex.end(),
+        std::lower_bound(d->lyrics.begin(),
+                         d->lyrics.end(),
                          position,
-                         [](const std::pair<qint64, int> &lhs, qint64 value) {
-                             return lhs.first < value;
+                         [](const std::pair<QString, qint64> &lhs, qint64 value) {
+                             return lhs.second < value;
                          });
-    if (result != d->timeToStringIndex.end()) {
-        d->timeIndex = std::distance(d->timeToStringIndex.begin(), result);
-        d->highlightedIndex = result->second;
-        Q_EMIT highlightedIndexChanged();
+    if (result != d->lyrics.end() && result != d->lyrics.begin()) {
+        d->highlightedIndex = std::distance(d->lyrics.begin(), --result);
+    } else {
+        d->highlightedIndex = -1;
     }
+    Q_EMIT highlightedIndexChanged();
 }
+
 int LyricsModel::highlightedIndex() const
 {
     return d->highlightedIndex;
+}
+
+bool LyricsModel::isLRC() const
+{
+    return d->isLRC;
+}
+
+QHash<int, QByteArray> LyricsModel::roleNames() const
+{
+    return {{LyricsRole::Lyric, QByteArrayLiteral("lyric")}, {LyricsRole::TimeStamp, QByteArrayLiteral("timestamp")}};
 }

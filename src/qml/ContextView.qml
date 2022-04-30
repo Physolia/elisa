@@ -286,11 +286,18 @@ Kirigami.Page {
                         width: parent.width
                         model: lyricsModel
                         delegate: Label {
-                            text: display
+                            text: lyric
                             width: lyricItem.width
                             wrapMode: Text.WordWrap
                             font.bold: ListView.isCurrentItem
                             horizontalAlignment: contentLayout.wideMode? Text.AlignLeft : Text.AlignHCenter
+                            AbstractButton {
+                                anchors.fill: parent
+                                enabled: lyricsModel.isLRC
+                                onClicked: {
+                                    ElisaApplication.audioPlayer.position = timestamp;
+                                }
+                            }
                         }
                         currentIndex: lyricsModel.highlightedIndex
                         onCurrentIndexChanged: {
