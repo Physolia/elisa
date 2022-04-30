@@ -293,6 +293,7 @@ Kirigami.Page {
                             horizontalAlignment: contentLayout.wideMode? Text.AlignLeft : Text.AlignHCenter
                             TapHandler {
                                 enabled: lyricsModel.isLRC
+                                cursorShape: Qt.PointingHandCursor
                                 onTapped: {
                                     ElisaApplication.audioPlayer.position = timestamp;
                                 }
