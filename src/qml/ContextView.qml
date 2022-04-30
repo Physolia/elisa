@@ -5,7 +5,7 @@
    SPDX-License-Identifier: LGPL-3.0-or-later
  */
 
-import QtQuick 2.10
+import QtQuick 2.15
 import QtQuick.Window 2.2
 import QtQuick.Controls 2.2
 import QtQml.Models 2.2
@@ -291,10 +291,9 @@ Kirigami.Page {
                             wrapMode: Text.WordWrap
                             font.bold: ListView.isCurrentItem
                             horizontalAlignment: contentLayout.wideMode? Text.AlignLeft : Text.AlignHCenter
-                            AbstractButton {
-                                anchors.fill: parent
+                            TapHandler {
                                 enabled: lyricsModel.isLRC
-                                onClicked: {
+                                onTapped: {
                                     ElisaApplication.audioPlayer.position = timestamp;
                                 }
                             }
