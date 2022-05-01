@@ -292,9 +292,11 @@ Kirigami.Page {
                             font.bold: ListView.isCurrentItem
                             horizontalAlignment: contentLayout.wideMode? Text.AlignLeft : Text.AlignHCenter
                             MouseArea {
-                                anchors.fill: parent
+                                height: parent.height
+                                width: Math.min(parent.width, parent.contentWidth)
+                                x: contentLayout.wideMode? 0 : (parent.width - width) / 2
                                 enabled: lyricsModel.isLRC
-                                cursorShape: Qt.PointingHandCursor
+                                cursorShape: enabled ? Qt.PointingHandCursor : undefined
                                 onClicked: {
                                     ElisaApplication.audioPlayer.position = timestamp;
                                 }
